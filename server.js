@@ -15,7 +15,8 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+// 本地跑用 3000；部署到 Render 等云平台时，平台会通过环境变量 PORT 告诉我们该用哪个端口
+const PORT = process.env.PORT || 3000;
 
 // ---------- 数据目录（Agent 配置都用 JSON 文件保存，零基础也能直接看懂） ----------
 const DATA_DIR = path.join(__dirname, 'data');
