@@ -234,6 +234,38 @@ function mockReply(agent, userMessage) {
   );
 }
 
+// ---------- 共用大脑：任何渠道（网页/Telegram/WhatsApp）都靠它生成回复 ----------
+// 抽成函数的好处：改一处，所有渠道同时生效（DRY 原则：Don't Repeat Yourself）
+async function askAgent(agent, message, history) {
+  // 未配置 API Key -> 演示模式
+  if (!config.apiKey) {
+    return mockReply(agent, message);
+  }
+
+  const messages = buildMessages(agent, history || [], message);
+
+  const response = await fetch(config.baseUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      temperature: 0.8,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`模型调用失败（HTTP ${response.status}）：${errText.slice(0, 300)}`);
+  }
+
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || '（模型没有返回内容）';
+}
+
 app.post('/api/agents/:id/chat', async (req, res) => {
   const agent = loadAgents().find((a) => a.id === req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent 不存在' });
@@ -241,36 +273,8 @@ app.post('/api/agents/:id/chat', async (req, res) => {
   const { message, history } = req.body;
   if (!message) return res.status(400).json({ error: '消息不能为空' });
 
-  // 未配置 API Key -> 演示模式
-  if (!config.apiKey) {
-    return res.json({ reply: mockReply(agent, message), demo: true });
-  }
-
-  const messages = buildMessages(agent, history || [], message);
-
   try {
-    const response = await fetch(config.baseUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: 0.8,
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      return res
-        .status(502)
-        .json({ error: `模型调用失败（HTTP ${response.status}）：${errText.slice(0, 300)}` });
-    }
-
-    const data = await response.json();
-    const reply = data?.choices?.[0]?.message?.content || '（模型没有返回内容）';
+    const reply = await askAgent(agent, message, history);
     res.json({ reply });
   } catch (err) {
     res.status(502).json({ error: '调用大模型出错：' + err.message });
@@ -314,6 +318,83 @@ app.post('/api/config', (req, res) => {
   if (apiKey !== undefined) config.apiKey = apiKey.trim();
   writeJSON(CONFIG_FILE, config);
   res.json({ ok: true });
+});
+
+// ============================================================
+//  WhatsApp 官方 Cloud API 接入（Webhook = 门铃）
+//  需要在 Render 后台填 4 个环境变量：
+//    WHATSAPP_VERIFY_TOKEN   自定义口令（随便一串字，Meta 验证时对暗号用）
+//    WHATSAPP_TOKEN          Meta 发的访问令牌（Access Token）
+//    WHATSAPP_PHONE_NUMBER_ID 测试电话号码的 ID（一串数字）
+//    WHATSAPP_AGENT_ID        用 AgentHub 里哪个 Agent 来回话（agents.json 里的 id）
+//  没填这几个变量时，WhatsApp 功能静默关闭，网页版完全不受影响
+// ============================================================
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || '';
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN || '';
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+const WHATSAPP_AGENT_ID = process.env.WHATSAPP_AGENT_ID || '';
+
+// 每个聊天对象的记忆：Map<电话号码, 消息数组>，和 telegram-bot.js 的思路一样
+const waHistories = new Map();
+
+// 门铃 1：Meta 注册 webhook 时来「对暗号」，证明这个网址真的是你的服务器
+app.get('/webhook/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token && token === WHATSAPP_VERIFY_TOKEN) {
+    console.log('[WhatsApp] webhook 验证通过');
+    return res.status(200).send(challenge);   // 原样把暗号喊回去
+  }
+  return res.sendStatus(403);                  // 暗号不对，拒之门外
+});
+
+// 门铃 2：客人发了 WhatsApp 消息，Meta 把消息推到这里
+app.post('/webhook/whatsapp', async (req, res) => {
+  res.sendStatus(200);   // 先立刻回执「收到了」（Meta 要求 20 秒内响应，慢慢想答案，先应门）
+
+  try {
+    const value = req.body?.entry?.[0]?.changes?.[0]?.value;
+    const msg = value?.messages?.[0];
+    // 只处理文字消息；图片、语音等类型先忽略
+    if (!msg || msg.type !== 'text') return;
+    const from = msg.from;                      // 客人的电话号码
+    const text = msg.text.body;                 // 客人说的话
+    console.log(`[WhatsApp] ${from} 说: ${text}`);
+
+    const agent = loadAgents().find((a) => a.id === WHATSAPP_AGENT_ID);
+    if (!agent) {
+      console.error('[WhatsApp] 找不到 Agent，检查环境变量 WHATSAPP_AGENT_ID');
+      return;
+    }
+
+    // 取这个号码最近的聊天记录当上下文（最多留 20 条，省 token）
+    const history = waHistories.get(from) || [];
+    const reply = await askAgent(agent, text, history);
+
+    // 把这轮对话存进记忆
+    history.push({ role: 'user', content: text }, { role: 'assistant', content: reply });
+    while (history.length > 20) history.shift();
+    waHistories.set(from, history);
+
+    // 把回复发回 WhatsApp（走 Meta 的 Graph API）
+    await fetch(`https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: from,
+        type: 'text',
+        text: { body: reply },
+      }),
+    });
+    console.log(`[WhatsApp] 已回复 ${from}`);
+  } catch (err) {
+    console.error('[WhatsApp] 处理出错:', err.message);
+  }
 });
 
 // ---------- 启动 ----------
