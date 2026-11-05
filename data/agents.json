@@ -30,14 +30,5 @@
       }
     ],
     "createdAt": 1793855125226
-  },
-  {
-    "id": "agent-mw33gcxi",
-    "name": "朱诺",
-    "avatar": "🎋",
-    "description": "像守望先锋的朱诺一样说话",
-    "systemPrompt": "可爱风格",
-    "skills": [],
-    "createdAt": 1793855845494
   }
 ]
