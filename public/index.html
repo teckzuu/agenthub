@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html data-page-node-id="ivMHMKwuEgSXyGTsMFN6ij" lang="zh-CN">
+<head data-page-node-id="jq8SFjloswSxb0O1jHf9uP">
+<script data-page-node-id="IF22M0Yt0NB3puMxHUzdY9" src="/page/page_comm/inject.js"></script>
+<meta data-page-node-id="ber93OaKp6o14obSGXd0ZX" charset="UTF-8">
+<meta data-page-node-id="odo3dxjKsXa4OiYNcL0pbz" content="width=device-width, initial-scale=1.0" name="viewport">
+<title data-page-node-id="kmF4f4ycVFuUQnikwDFqYM" data-pnid-children="JkhGFbl8hgj18BIfyfhEQx">AgentHub · 零代码 Agent 托管平台</title>
+<style data-page-node-id="Rv6Jv2orzU5f1bxHKKxElE" data-pnid-children="DxP3TePCprK1Z10yRRD6oN">
+  :root {
+    --bg: #f4f6fa;
+    --panel: #ffffff;
+    --border: #e3e8f0;
+    --text: #1c2333;
+    --text2: #6b7280;
+    --primary: #4f6ef7;
+    --primary-dark: #3b55d9;
+    --danger: #e5484d;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden;
+  }
+
+  /* ---------- 侧边栏：Agent 列表 ---------- */
+  .sidebar {
+    width: 280px; background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  .logo { padding: 20px; border-bottom: 1px solid var(--border); }
+  .logo h1 { font-size: 20px; }
+  .logo p { font-size: 12px; color: var(--text2); margin-top: 4px; }
+  .agent-list { flex: 1; overflow-y: auto; padding: 12px; }
+  .agent-item {
+    display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: var(--radius);
+    cursor: pointer; transition: background 0.15s; border: 1px solid transparent;
+  }
+  .agent-item:hover { background: #f0f3fb; }
+  .agent-item.active { background: #eef1ff; border-color: #d6ddff; }
+  .agent-item .avatar { font-size: 26px; }
+  .agent-item .info { min-width: 0; }
+  .agent-item .name { font-weight: 600; font-size: 14px; }
+  .agent-item .desc { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-footer { padding: 12px; border-top: 1px solid var(--border); }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px;
+    cursor: pointer; transition: 0.15s; font-family: inherit;
+  }
+  .btn-primary { background: var(--primary); color: #fff; width: 100%; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-ghost { background: transparent; color: var(--text2); }
+  .btn-ghost:hover { background: #f0f3fb; color: var(--text); }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-danger-text { color: var(--danger); }
+
+  /* ---------- 主区域 ---------- */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    height: 60px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+  }
+  .topbar .title { font-weight: 600; font-size: 16px; }
+  .badge-demo {
+    font-size: 12px; background: #fff4e0; color: #b26a00; padding: 4px 10px;
+    border-radius: 20px; cursor: pointer; border: 1px solid #ffe3b3;
+  }
+  .badge-ok { background: #e6f7ec; color: #12813f; border-color: #c3ecd2; }
+
+  /* ---------- 欢迎页 ---------- */
+  .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text2); }
+  .welcome .big { font-size: 52px; }
+
+  /* ---------- 对话区 ---------- */
+  .chat-area { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { display: flex; gap: 10px; max-width: 760px; }
+  .msg .bubble {
+    padding: 12px 16px; border-radius: var(--radius); font-size: 14px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.user .bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; }
+  .msg.bot .bubble { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg .who { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  .chat-input-bar {
+    padding: 16px 24px; background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; gap: 10px;
+  }
+  .chat-input-bar textarea {
+    flex: 1; resize: none; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; font-size: 14px; font-family: inherit; height: 52px; outline: none;
+  }
+  .chat-input-bar textarea:focus { border-color: var(--primary); }
+
+  /* ---------- 弹窗（创建/编辑 Agent & 设置） ---------- */
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+    z-index: 100; align-items: center; justify-content: center;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: var(--panel); border-radius: 16px; width: 640px; max-width: 92vw;
+    max-height: 88vh; overflow-y: auto; padding: 28px;
+  }
+  .modal h2 { font-size: 18px; margin-bottom: 18px; }
+  .form-row { margin-bottom: 14px; }
+  .form-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .form-row .hint { font-size: 12px; color: var(--text2); font-weight: 400; margin-left: 6px; }
+  .form-row input, .form-row textarea, .form-row select {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    font-size: 14px; font-family: inherit; outline: none; background: #fff;
+  }
+  .form-row textarea { resize: vertical; }
+  .form-row input:focus, .form-row textarea:focus, .form-row select:focus { border-color: var(--primary); }
+  .avatar-picker { display: flex; gap: 8px; flex-wrap: wrap; }
+  .avatar-option {
+    font-size: 22px; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border);
+  }
+  .avatar-option.selected { border-color: var(--primary); background: #eef1ff; }
+  .skill-card {
+    border: 1px dashed var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #fafbfe;
+  }
+  .skill-card .skill-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .skill-card .skill-head span { font-size: 13px; font-weight: 600; color: var(--primary-dark); }
+  .skill-card input, .skill-card textarea { margin-bottom: 6px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: #1c2333; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 14px; display: none; z-index: 200;
+  }
+</style>
+</head>
+<body data-page-node-id="cc1DhxFxy4jnDU3y6qeycV">
+
+<!--pnid:XOhRxjuQRYKEdvblxSCHhK--><!-- ============ 侧边栏 ============ -->
+<aside data-page-node-id="FBLwNq6Iy9PpWnrKIaX0ah" class="sidebar">
+  <div data-page-node-id="bNq4IhEsx7Z0sUCqWQkqvo" class="logo">
+    <h1 data-page-node-id="tIpfWTLC6TX26zTONfQsvZ"><!--pnid:MEauj0idoBzLXmYbyDbKLH-->🤖 AgentHub</h1>
+    <p data-page-node-id="2j6gu3e6gkmuASxtaKmI8f"><!--pnid:NhdX3VhW7ylLXrzVjRrPnS-->零代码 Agent 托管平台</p>
+  </div>
+  <div data-page-node-id="9pDi6DV2Ew7FaFM7VBAQTf" class="agent-list" id="agentList"></div>
+  <div data-page-node-id="JfkCT74stHLScI4NQv5Dr2" class="sidebar-footer">
+    <button data-page-node-id="39cptVbxe7zOUyy4N7Hty6" class="btn btn-primary" onclick="openEditor()"><!--pnid:XQSE9lbGvjkJa2niP2xt6L-->＋ 创建我的 Agent</button>
+  </div>
+</aside>
+
+<!--pnid:5x4gfrfHXpBj5Uaymcch6T--><!-- ============ 主区域 ============ -->
+<main data-page-node-id="vXkHsBuyDwAq43xxhMu9o3" class="main">
+  <div data-page-node-id="zcTI2LoKoSoF6Z6ZZQJfmL" class="topbar">
+    <div data-page-node-id="YabrWDDTwUXtxzcAeF9Hhg" class="title" id="topTitle"><!--pnid:7EJRfPZs8RYto9Bqcld9BH-->欢迎使用 AgentHub</div>
+    <div data-page-node-id="lo7vG8gwftnCBdgKcwV8OA" class="badge-demo" id="modelBadge" onclick="openSettings()"><!--pnid:IMQ2gHF61P0cyi60lNI73z-->⚙ 模型设置</div>
+  </div>
+
+  <div data-page-node-id="kNNKtCV0exlXYKvdPxTW6H" class="welcome" id="welcome">
+    <div data-page-node-id="GGo2q6094O1z8mMiR3mzku" class="big"><!--pnid:8ouYwlfEbJamuqvRVKJ9zB-->🤖</div>
+    <h2 data-page-node-id="8Ml7LMPLmDmAntNTlufYim"><!--pnid:GeQKH4VO8Q2Wx0YsqunMmW-->从左侧选择一个 Agent 开始对话</h2>
+    <p data-page-node-id="aR8FUZBXZxNLjSEnjwNhSA"><!--pnid:8M3M262NCjfpAf43PkAgGV-->或者点击「创建我的 Agent」—— 只需要写一段描述，无需任何代码</p>
+  </div>
+
+  <div data-page-node-id="nxDMYBJJZmpbR2qG6GaGKu" class="chat-area" id="chatArea" style="display:none"></div>
+
+  <div data-page-node-id="ZzqJdJmcoo46cdtZy2WtSt" class="chat-input-bar" id="inputBar" style="display:none">
+    <textarea data-page-node-id="rTW2Rz7efL7lWSE7ZYWsjh" id="chatInput" placeholder="输入消息，Enter 发送（Shift+Enter 换行）"></textarea>
+    <button data-page-node-id="C00sqHtE5LWgXbINbav9cg" class="btn btn-primary btn-sm" onclick="send()" style="width:auto; padding:0 22px"><!--pnid:SE6uDcyd7PmT7Z4blfc1nN-->发送</button>
+    <button class="btn btn-ghost btn-sm" onclick="saveChat()" style="width:auto">💾 save</button>
+
+  </div>
+</main>
+
+<!--pnid:MwflOdwHmACihaSlSkdVDP--><!-- ============ Agent 编辑弹窗 ============ -->
+<div data-page-node-id="MmppBnPftxlT1wwNss8bRD" class="modal-mask" id="editorMask">
+  <div data-page-node-id="HXLtyZprz9tUQRmmHa81fH" class="modal">
+    <h2 data-page-node-id="5qNu4SMRGzYwqmISrUBF9H" id="editorTitle"><!--pnid:ladyj2Uyt4VCvXyYk6rpCc-->创建我的 Agent</h2>
+
+    <div data-page-node-id="lrztDhrsnvznxq7eHstqqr" class="form-row">
+      <label data-page-node-id="CpulRCLT7LuLXaA9IQZZFb"><!--pnid:IgIFBbwcYkqXOEvrGRa45q-->头像</label>
+      <div data-page-node-id="teT68yIK1zwUJdsfiV1Dw4" class="avatar-picker" id="avatarPicker"></div>
+    </div>
+    <div data-page-node-id="0m3nn6qYBaf1lcQaeP6nVz" class="form-row">
+      <label data-page-node-id="7F2xy7zfcie03EeDrxcXCg"><!--pnid:9jG8B5XD2TNtCxE5RvIkAj-->名称 <span data-page-node-id="FaMDGD8vZIqU9iqs5SRcex" class="hint"><!--pnid:9QKQnqdH2KWf3Eg2QNr8jA-->比如：小红书文案助手</span></label>
+      <input data-page-node-id="mv1X6Hd9kZvycnZvJ63Xmd" id="fName" placeholder="给 Agent 起个名字">
+    </div>
+    <div data-page-node-id="YVZ1YNvdwMawJzhHivf8ag" class="form-row">
+      <label data-page-node-id="fW3YntuX1ag9rn5RP05nMB"><!--pnid:eDPXxUeaTyCIZlEUzzTOpR-->描述 <span data-page-node-id="jMlomIgagAGUiceIkONsou" class="hint"><!--pnid:IU5VW2WYf8o1sJXGrXjpli-->一句话说明这个 Agent 是做什么的</span></label>
+      <textarea data-page-node-id="Y0DEcEYT1Vw0dNPnjXSkkg" id="fDesc" placeholder="例如：帮助运营撰写小红书风格的种草文案，包含标题、正文和标签" rows="2"></textarea>
+    </div>
+    <div data-page-node-id="YROrmQVIHVIfYP53dgg6gq" class="form-row">
+      <label data-page-node-id="v2gNTv1qI9FCrmWXRBymXX"><!--pnid:ko82GrNTXqA0lwwBR3HpSx-->系统提示词 <span data-page-node-id="5O8R5L3Jw2xeG7qWPrvCGo" class="hint"><!--pnid:dc02WJ7FQFfYhTbWZ1la8A-->Agent 的人设与行为规则，越具体效果越好</span></label>
+      <textarea data-page-node-id="pGovxh6qon8QTiIpYf960m" id="fPrompt" placeholder="例如：你是一位资深小红书运营。每次创作包含：3 个备选标题（带 emoji）、200 字正文、5 个话题标签。语气活泼真实。" rows="4"></textarea>
+    </div>
+    <div data-page-node-id="W1xmAK6QmzteVOgMfYKtm0" class="form-row">
+      <label data-page-node-id="aZ3J813v1cM0LtZUptfDFx"><!--pnid:AxZkxweCPFQHp3nSSR77tD-->自定义技能 <span data-page-node-id="iJ6AZhpGYwfGprWqMtfjUQ" class="hint"><!--pnid:di7AZFaAfbthHtx2GxzZmT-->当用户消息命中「触发词」时，技能内容会被注入提示词</span></label>
+      <div data-page-node-id="MDzwYoGos20d7rRpUdfzoT" id="skillList"></div>
+      <button data-page-node-id="biwKAUQSWu5zp7t3Y2TMkv" class="btn btn-ghost btn-sm" onclick="addSkill()"><!--pnid:IlP38OXo4qgmWLPLJiqpQg-->＋ 添加技能</button>
+    </div>
+
+    <div data-page-node-id="iBQYwdRsZoX5ulcWoha3t4" class="modal-actions">
+      <button data-page-node-id="BdYdNbkULlPTmkJ8gJcS8C" class="btn btn-ghost" onclick="closeEditor()"><!--pnid:6TvCMAy7cvtnc4qZ0LNvbs-->取消</button>
+      <button data-page-node-id="N3WocOxrxvY9mxnhB1D6M3" class="btn btn-primary" onclick="saveAgent()" style="width:auto"><!--pnid:JqnsW388hNr6cMKQ9guOfr-->保存</button>
+    </div>
+  </div>
+</div>
+
+<!--pnid:0yY7UdWyPAPJ2gnilovXUO--><!-- ============ 模型设置弹窗 ============ -->
+<div data-page-node-id="E11WQfoEcQxchXPB7x6vFa" class="modal-mask" id="settingsMask">
+  <div data-page-node-id="bDE1V9mu5qrHxVQPYrycf7" class="modal">
+    <h2 data-page-node-id="OfXYg0IeoouXjYXbUCAJk7"><!--pnid:F6XtFT1l4qHOYOuRlxSCGx-->⚙ 大模型设置（免费方案）</h2>
+    <div data-page-node-id="FyDA8RQRx1hTtGlQFX6e7j" class="form-row">
+      <label data-page-node-id="iIfPUfy4QWdTCq1ygo2ORm"><!--pnid:liMQjxKR8wmoXYAXZnIWyF-->服务商</label>
+      <select data-page-node-id="Bu4KR7WiG6QiNhdZSjAAil" id="sProvider"></select>
+    </div>
+    <div data-page-node-id="EJHktV0NZmPAEdtVvfFHDJ" class="form-row">
+      <label data-page-node-id="8Vm2RmMx6mgu2f5HeRGSFF"><!--pnid:51pLdZA8u31CFQK0zQTc9b-->API Key <span data-page-node-id="3o7ecwbR6NNmYnjVvgMP63" class="hint"><!--pnid:7kKIG1cazQ9WGCVc6zt2C6-->免费获取：注册对应平台即可，智谱 GLM-4-Flash 完全免费</span></label>
+      <input data-page-node-id="mPxmEL7JnsWSixvrmAWe0H" id="sKey" placeholder="粘贴你的 API Key（留空则使用演示模式）" type="password">
+    </div>
+    <div data-page-node-id="iKJrgPXK2IXphR7sTE52iD" class="form-row">
+      <label data-page-node-id="WsiI6UE1mGqyAUTpChoY79"><!--pnid:WQJ5VUL88XaAOLyWVWGvjI-->接口地址</label>
+      <input data-page-node-id="cM7qMfxcMkvu7Hcq1QDD2L" id="sBase">
+    </div>
+    <div data-page-node-id="da5uFFNFwjy1qwjPie2WUA" class="form-row">
+      <label data-page-node-id="4YT6Q7rP3GW2JV1hEW4OAp"><!--pnid:384Migys8pND18Ay98p6bg-->模型名称</label>
+      <input data-page-node-id="C6bXtjNWHv6rZ5IWcfEtg8" id="sModel">
+    </div>
+    <p data-page-node-id="elJ1r2UOOLXpy01E3QFqhC" style="font-size:12px; color:var(--text2); line-height:1.7"><!--pnid:h034a3ACwhBdVKhPVN9iiq-->
+      💡 推荐使用 <b data-page-node-id="1oqWJ0tMEBt3grBEOmTFA7"><!--pnid:fzoZothpYu5ADsOTmpodPy-->智谱 GLM-4-Flash</b><!--pnid:XTdpv0aIkBBct4TRxHKU0t-->：访问 open.bigmodel.cn 注册 → 用户中心 → API Keys → 复制即可，模型免费不限量。
+    </p>
+    <div data-page-node-id="etNqHqkvgIHx7nfB0RF6Qt" class="modal-actions">
+      <button data-page-node-id="xH1yGbjhUK9bPZeEZxCgs5" class="btn btn-ghost" onclick="closeSettings()"><!--pnid:ZU8UAix4IGcs6FF9avjU3L-->取消</button>
+      <button data-page-node-id="4yahS1A59XpxkBJweufoQ4" class="btn btn-primary" onclick="saveSettings()" style="width:auto"><!--pnid:Ng0KL5aMGODY7q18FkHfwl-->保存</button>
+    </div>
+  </div>
+</div>
+
+<div data-page-node-id="Z9Gzm74YaYmzNUSvkmgv5L" class="toast" id="toast"></div>
+
+<script data-page-node-id="DLWoxGOy006IzPFRSB3C2a" data-pnid-children="FilEcfDiymXXOI4ShNYdmJ">
+// ================= 全局状态 =================
+let agents = [];
+let currentAgent = null;   // 当前对话的 Agent
+let history = [];          // 当前对话历史 [{role, content}]
+let editingId = null;      // 正在编辑的 Agent id（null = 新建）
+const AVATARS = ['🤖','🎋','🌍','✍️','📚','💼','🧑‍🍳','🎨','🧠','🐱','🎯','🔍','📝','💡','🏥','⚖️'];
+
+// ================= 工具函数 =================
+const $ = (id) => document.getElementById(id);
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => (t.style.display = 'none'), 2500);
+}
+async function api(url, options) {
+  const res = await fetch(url, options);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '请求失败');
+  return data;
+}
+
+// ================= Agent 列表 =================
+async function loadAgents() {
+  agents = await api('/api/agents');
+  renderAgentList();
+}
+function renderAgentList() {
+  const box = $('agentList');
+  box.innerHTML = '';
+  for (const a of agents) {
+    const div = document.createElement('div');
+    div.className = 'agent-item' + (currentAgent && currentAgent.id === a.id ? ' active' : '');
+    div.innerHTML = `<div class="avatar">${a.avatar}</div>
+      <div class="info"><div class="name">${esc(a.name)}</div><div class="desc">${esc(a.description)}</div></div>`;
+    div.onclick = () => selectAgent(a.id);
+    box.appendChild(div);
+  }
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ================= 对话 =================
+function selectAgent(id) {
+  currentAgent = agents.find((a) => a.id === id);
+  history = [];
+  $('welcome').style.display = 'none';
+  $('chatArea').style.display = 'flex';
+  $('inputBar').style.display = 'flex';
+  $('topTitle').textContent = `${currentAgent.avatar} ${currentAgent.name}`;
+  $('chatArea').innerHTML = '';
+  renderAgentList();
+
+  // 展示 Agent 介绍卡片
+  const intro = document.createElement('div');
+  intro.className = 'msg bot';
+  const skills = (currentAgent.skills || []).map((s) => '🧩 ' + s.name).join('<br>') || '（暂无技能）';
+  intro.innerHTML = `<div class="bubble"><div class="who">${esc(currentAgent.name)} · 自我介绍</div>${esc(currentAgent.description)}<br><br><b>我的技能：</b><br>${skills}</div>`;
+  $('chatArea').appendChild(intro);
+}
+
+async function send() {
+  const input = $('chatInput');
+  const text = input.value.trim();
+  if (!text || !currentAgent) return;
+  input.value = '';
+  addBubble('user', '你', text);
+
+  // 占位的「思考中」气泡
+  const loading = addBubble('bot', currentAgent.name, '思考中…');
+
+  try {
+    const data = await api(`/api/agents/${currentAgent.id}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history }),
+    });
+    loading.querySelector('.bubble').textContent = data.reply;
+    history.push({ role: 'user', content: text });
+    history.push({ role: 'assistant', content: data.reply });
+  } catch (err) {
+    loading.querySelector('.bubble').textContent = '❌ ' + err.message;
+  }
+  scrollChat();
+}
+
+// 存对话：把当前聊天记录寄给后端保存
+async function saveChat() {
+  if (!currentAgent || history.length === 0) {
+    return toast('聊两句再来存吧');   // 守门员：没聊过天就不寄空包裹
+  }
+  const data = await api(`/api/agents/${currentAgent.id}/save-history`, {
+    method: 'POST',                                  // 寄件
+    headers: { 'Content-Type': 'application/json' }, // 标签：内含JSON
+    body: JSON.stringify({ messages: history }),     // 货：整个聊天记录
+  });
+  toast(`✅ 已保存！服务器上共存了 ${data.total} 条记录`);
+}
+
+
+function addBubble(role, who, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = `<div class="bubble"><div class="who">${esc(who)}</div>${esc(text)}</div>`;
+  $('chatArea').appendChild(div);
+  scrollChat();
+  return div;
+}
+function scrollChat() { $('chatArea').scrollTop = $('chatArea').scrollHeight; }
+
+// 回车发送
+$('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+// ================= Agent 编辑器 =================
+let tempSkills = [];
+
+function openEditor(agent) {
+  editingId = agent ? agent.id : null;
+  $('editorTitle').textContent = agent ? '编辑 Agent' : '创建我的 Agent';
+  $('fName').value = agent ? agent.name : '';
+  $('fDesc').value = agent ? agent.description : '';
+  $('fPrompt').value = agent ? agent.systemPrompt : '';
+  tempSkills = agent ? JSON.parse(JSON.stringify(agent.skills || [])) : [];
+  renderAvatarPicker(agent ? agent.avatar : '🤖');
+  renderSkills();
+  $('editorMask').classList.add('show');
+}
+function closeEditor() { $('editorMask').classList.remove('show'); }
+
+function renderAvatarPicker(selected) {
+  const box = $('avatarPicker');
+  box.innerHTML = '';
+  AVATARS.forEach((a) => {
+    const span = document.createElement('span');
+    span.className = 'avatar-option' + (a === selected ? ' selected' : '');
+    span.textContent = a;
+    span.onclick = () => renderAvatarPicker(a);
+    box.appendChild(span);
+  });
+}
+function getSelectedAvatar() {
+  return $('avatarPicker').querySelector('.selected')?.textContent || '🤖';
+}
+
+function renderSkills() {
+  const box = $('skillList');
+  box.innerHTML = '';
+  tempSkills.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'skill-card';
+    card.innerHTML = `
+      <div class="skill-head"><span>技能 ${i + 1}</span>
+        <button class="btn btn-ghost btn-sm btn-danger-text" onclick="removeSkill(${i})">删除</button></div>
+      <input placeholder="技能名称，如：周报生成" value="${esc(s.name)}" oninput="tempSkills[${i}].name=this.value" />
+      <input placeholder="技能描述（一句话）" value="${esc(s.description)}" oninput="tempSkills[${i}].description=this.value" />
+      <input placeholder="触发词，逗号分隔，如：周报,总结" value="${esc(s.trigger)}" oninput="tempSkills[${i}].trigger=this.value" />
+      <textarea rows="3" placeholder="技能内容：命中触发词后注入给模型的详细指令" oninput="tempSkills[${i}].content=this.value">${esc(s.content)}</textarea>`;
+    box.appendChild(card);
+  });
+}
+function addSkill() { tempSkills.push({ name: '', description: '', trigger: '', content: '' }); renderSkills(); }
+function removeSkill(i) { tempSkills.splice(i, 1); renderSkills(); }
+
+async function saveAgent() {
+  const payload = {
+    avatar: getSelectedAvatar(),
+    name: $('fName').value.trim(),
+    description: $('fDesc').value.trim(),
+    systemPrompt: $('fPrompt').value.trim(),
+    skills: tempSkills.filter((s) => s.name.trim()),
+  };
+  if (!payload.name || !payload.description || !payload.systemPrompt) {
+    return toast('名称、描述、系统提示词都不能为空哦');
+  }
+  try {
+    if (editingId) {
+      await api(`/api/agents/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      await loadAgents();   // 编辑：先刷新本地名单再关窗
+    } else {
+      const created = await api('/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      await loadAgents();   // ★ 修复 bug：先拉最新名单（把新 Agent 装进 agents 数组）
+      selectAgent(created.id);  // 再选中它——原来这行在 loadAgents 之前，find 找不到新 Agent，currentAgent 是 undefined，读 avatar 就报错
+    }
+    closeEditor();
+    toast('✅ 保存成功');
+  } catch (err) { toast(err.message); }
+}
+
+function editCurrent() { if (currentAgent) openEditor(currentAgent); }
+async function deleteCurrent() {
+  if (!currentAgent) return;
+  if (!confirm(`确定删除「${currentAgent.name}」吗？`)) return;
+  await api(`/api/agents/${currentAgent.id}`, { method: 'DELETE' });
+  currentAgent = null;
+  $('welcome').style.display = 'flex';
+  $('chatArea').style.display = 'none';
+  $('inputBar').style.display = 'none';
+  $('topTitle').textContent = '欢迎使用 AgentHub';
+  await loadAgents();
+}
+
+// ================= 模型设置 =================
+let presets = {};
+async function openSettings() {
+  const cfg = await api('/api/config');
+  presets = cfg.presets;
+  const sel = $('sProvider');
+  sel.innerHTML = '';
+  Object.entries(presets).forEach(([key, p]) => {
+    const opt = document.createElement('option');
+    opt.value = key; opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+  sel.value = cfg.provider;
+  $('sKey').value = '';
+  $('sKey').placeholder = cfg.hasKey ? `已保存：${cfg.apiKey}（输入新值可覆盖）` : '粘贴你的 API Key（留空则使用演示模式）';
+  $('sBase').value = cfg.baseUrl;
+  $('sModel').value = cfg.model;
+  sel.onchange = () => {
+    const p = presets[sel.value];
+    $('sBase').value = p.baseUrl; $('sModel').value = p.model;
+  };
+  $('settingsMask').classList.add('show');
+}
+function closeSettings() { $('settingsMask').classList.remove('show'); }
+async function saveSettings() {
+  try {
+    await api('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: $('sProvider').value,
+        baseUrl: $('sBase').value.trim(),
+        model: $('sModel').value.trim(),
+        apiKey: $('sKey').value, // 空字符串=清除，不动=不修改（用特殊标记）
+      }),
+    });
+    closeSettings();
+    await refreshBadge();
+    toast('✅ 模型设置已保存');
+  } catch (err) { toast(err.message); }
+}
+async function refreshBadge() {
+  const cfg = await api('/api/config');
+  const badge = $('modelBadge');
+  if (cfg.hasKey) {
+    badge.textContent = `✅ ${cfg.model}`;
+    badge.className = 'badge-demo badge-ok';
+  } else {
+    badge.textContent = '⚠ 演示模式 · 点击配置模型';
+    badge.className = 'badge-demo';
+  }
+}
+
+// ================= 初始化 =================
+loadAgents();
+refreshBadge();
+</script>
+</body>
+</html>
