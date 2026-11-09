@@ -151,6 +151,20 @@ async function retrieveKnowledge(agentId, query) {
     .map((doc) => doc.text);
 }
 
+// 切块 (Chunking)：长文档切成小段再分别向量化（第 14 课）
+// 整篇直接向量化 = 一个向量糊了所有意思 = 检索不准
+function chunkText(text, chunkSize = 300, overlap = 50) {
+  const chunks = [];
+  const step = chunkSize - overlap; // 前进步长 = 块大小 - 重叠
+  for (let i = 0; i < text.length; i += step) {
+    chunks.push(text.slice(i, i + chunkSize));
+    if (i + chunkSize >= text.length) break;
+  }
+  return chunks.filter((c) => c.trim().length > 10); // 边角料太碎的不要
+}
+const CHUNK_TRIGGER = 400; // 超过 400 字的长文才切块，短句直接存
+const MAX_CHUNKS = 30;     // 单次最多切 30 块，防止一次贴几万字刷爆 API
+
 // ---------- 中间件 ----------
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -414,11 +428,20 @@ app.post('/api/agents/:id/knowledge', async (req, res) => {
     return res.status(400).json({ error: '尚未配置 Google API Key（Embedding 需要），见 README' });
   }
   try {
-    const vec = await embed(text.trim());
+    // 长文档先切块，每块独立向量化（短句不切，保持原样）
+    const raw = text.trim();
+    const chunks =
+      raw.length > CHUNK_TRIGGER ? chunkText(raw).slice(0, MAX_CHUNKS) : [raw];
+
     const docs = loadKnowledge(agent.id);
-    docs.push({ text: text.trim(), vec });
+    let dims = 0;
+    for (const chunk of chunks) {
+      const vec = await embed(chunk);
+      dims = vec.length;
+      docs.push({ text: chunk, vec });
+    }
     saveKnowledge(agent.id, docs);
-    res.json({ ok: true, total: docs.length, dims: vec.length });
+    res.json({ ok: true, total: docs.length, dims, added: chunks.length });
   } catch (err) {
     res.status(502).json({ error: '向量化失败：' + err.message });
   }

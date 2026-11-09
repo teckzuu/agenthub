@@ -352,7 +352,7 @@ async function addKnowledge() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     });
-    toast(`✅ 已入库！${currentAgent.name} 现在有 ${data.total} 条知识（向量 ${data.dims} 维）`);
+    toast(`✅ 已入库！${data.added > 1 ? `长文切成 ${data.added} 块分别入库，` : ''}现在共 ${data.total} 条知识`);
   } catch (err) {
     toast('❌ ' + err.message);
   }
