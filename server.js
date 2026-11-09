@@ -152,17 +152,25 @@ async function retrieveKnowledge(agentId, query) {
 }
 
 // 切块 (Chunking)：长文档切成小段再分别向量化（第 14 课）
-// 整篇直接向量化 = 一个向量糊了所有意思 = 检索不准
-function chunkText(text, chunkSize = 300, overlap = 50) {
+// 策略升级：按行打包——用户写的换行天然是话题边界（一行=一个话题），
+// 把行攒成接近 targetSize 的块，永远不把一行切半（比数字母切更聪明）
+function chunkText(text, targetSize = 120) {
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const chunks = [];
-  const step = chunkSize - overlap; // 前进步长 = 块大小 - 重叠
-  for (let i = 0; i < text.length; i += step) {
-    chunks.push(text.slice(i, i + chunkSize));
-    if (i + chunkSize >= text.length) break;
+  let current = '';
+  for (const line of lines) {
+    const candidate = current ? current + '\n' + line : line;
+    if (candidate.length <= targetSize) {
+      current = candidate;                 // 还装得下，继续攒
+    } else {
+      if (current) chunks.push(current);   // 装不下了，先封箱
+      current = line;
+    }
   }
-  return chunks.filter((c) => c.trim().length > 10); // 边角料太碎的不要
+  if (current) chunks.push(current);
+  return chunks.filter((c) => c.length > 10); // 边角料太碎的不要
 }
-const CHUNK_TRIGGER = 400; // 超过 400 字的长文才切块，短句直接存
+const CHUNK_TRIGGER = 150; // 超过 150 字才切块（中文信息密度高，150字已是完整话题集合）
 const MAX_CHUNKS = 30;     // 单次最多切 30 块，防止一次贴几万字刷爆 API
 
 // ---------- 中间件 ----------
