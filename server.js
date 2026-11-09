@@ -139,6 +139,7 @@ function saveKnowledge(agentId, list) {
 }
 
 // 检索：问题变向量 → 和每段资料算余弦 → 排序取前K名 → 过门槛
+// 返回对象数组 {text, sim}：不只给文字，还带相似度分数（引用展示要用）
 async function retrieveKnowledge(agentId, query) {
   const docs = loadKnowledge(agentId);
   if (docs.length === 0) return [];   // 档案柜空的，直接走人
@@ -147,8 +148,7 @@ async function retrieveKnowledge(agentId, query) {
     .map((doc) => ({ text: doc.text, sim: cosineSimilarity(qVec, doc.vec) }))
     .sort((a, b) => b.sim - a.sim)
     .slice(0, TOP_K)
-    .filter((doc) => doc.sim > SIM_THRESHOLD)
-    .map((doc) => doc.text);
+    .filter((doc) => doc.sim > SIM_THRESHOLD);
 }
 
 // 切块 (Chunking)：长文档切成小段再分别向量化（第 14 课）
@@ -309,10 +309,11 @@ function buildMessages(agent, history, userMessage, knowledgeChunks) {
   }
 
   // RAG 的「增强」环节：把检索到的资料垫在 prompt 里，让 AI 照着答，不许瞎编
+  // 要求标注引用（Citation）：句尾标（资料N），前端才能溯源展示
   const ragPart =
     knowledgeChunks && knowledgeChunks.length
-      ? `【知识库资料】回答时优先依据以下资料，资料里没有的信息请诚实说不知道：\n` +
-        knowledgeChunks.map((t, i) => `资料${i + 1}：${t}`).join('\n')
+      ? `【知识库资料】回答时优先依据以下资料，句尾用（资料N）标注引用了哪段；资料里没有的信息请诚实说不知道，不许编造：\n` +
+        knowledgeChunks.map((k, i) => `资料${i + 1}：${k.text}`).join('\n')
       : '';
 
   const systemContent = [
@@ -347,7 +348,7 @@ function mockReply(agent, userMessage) {
 async function askAgent(agent, message, history) {
   // 未配置 API Key -> 演示模式
   if (!config.apiKey) {
-    return mockReply(agent, message);
+    return { reply: mockReply(agent, message), sources: [] };
   }
 
   // RAG 的「检索」环节：先去该 Agent 的知识库里捞相关资料
@@ -383,7 +384,9 @@ async function askAgent(agent, message, history) {
   }
 
   const data = await response.json();
-  return data?.choices?.[0]?.message?.content || '（模型没有返回内容）';
+  const reply = data?.choices?.[0]?.message?.content || '（模型没有返回内容）';
+  // 返回值升级为对象：reply=回复正文，sources=这次回答垫了哪些资料（引用展示用）
+  return { reply, sources: chunks.map((c) => c.text) };
 }
 
 app.post('/api/agents/:id/chat', async (req, res) => {
@@ -394,8 +397,8 @@ app.post('/api/agents/:id/chat', async (req, res) => {
   if (!message) return res.status(400).json({ error: '消息不能为空' });
 
   try {
-    const reply = await askAgent(agent, message, history);
-    res.json({ reply });
+    const result = await askAgent(agent, message, history);
+    res.json({ reply: result.reply, sources: result.sources });
   } catch (err) {
     res.status(502).json({ error: '调用大模型出错：' + err.message });
   }
@@ -533,8 +536,9 @@ app.post('/webhook/whatsapp', async (req, res) => {
     }
 
     // 取这个号码最近的聊天记录当上下文（最多留 20 条，省 token）
+    // 注意这里用了对象解构 (Destructuring)：askAgent 现在返回 {reply, sources}，WhatsApp 只要 reply
     const history = waHistories.get(from) || [];
-    const reply = await askAgent(agent, text, history);
+    const { reply } = await askAgent(agent, text, history);
 
     // 把这轮对话存进记忆
     history.push({ role: 'user', content: text }, { role: 'assistant', content: reply });

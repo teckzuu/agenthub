@@ -316,6 +316,15 @@ async function send() {
       body: JSON.stringify({ message: text, history }),
     });
     loading.querySelector('.bubble').textContent = data.reply;
+    // 引用来源 (Citation)：把这次回答垫的资料显示在气泡下方，可溯源防幻觉
+    if (data.sources && data.sources.length) {
+      const src = document.createElement('div');
+      src.style.cssText = 'font-size:12px;color:#999;margin:4px 0 8px 14px;line-height:1.5';
+      src.textContent = '📚 资料来源：' + data.sources
+        .map((s, i) => `资料${i + 1}「${s.slice(0, 20)}…」`)
+        .join('　');
+      loading.after(src);
+    }
     history.push({ role: 'user', content: text });
     history.push({ role: 'assistant', content: data.reply });
   } catch (err) {
