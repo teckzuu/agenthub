@@ -1,5 +1,7 @@
 node_modules/
 data/config.json
+data/knowledge/
+google-config.json
 *.log
 .env
 .DS_Store

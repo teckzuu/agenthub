@@ -73,6 +73,80 @@ let config = { ...DEFAULT_CONFIG, ...readJSON(CONFIG_FILE, {}) };
 // 环境变量优先：部署到云端时用环境变量传 Key，不把 Key 提交进代码仓库
 if (process.env.LLM_API_KEY) config.apiKey = process.env.LLM_API_KEY;
 
+// ============================================================
+//  RAG 知识库引擎（第 11-13 课学的内容，生产化落地）
+//  需要 Google API Key（Embedding 专用，和聊天 Key 是两回事）：
+//    本地：本文件夹下的 google-config.json { "apiKey": "..." }
+//    云端：环境变量 GOOGLE_API_KEY
+//  没配 Key 时 RAG 静默关闭，其他功能完全不受影响
+// ============================================================
+let googleKey = process.env.GOOGLE_API_KEY || '';
+if (!googleKey) {
+  const gcfg = readJSON(path.join(__dirname, 'google-config.json'), {});
+  if (gcfg.apiKey) googleKey = gcfg.apiKey;
+}
+const EMBED_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent';
+const SIM_THRESHOLD = 0.66; // 门槛：第 13 课用真实数据校准出来的分界线
+const TOP_K = 2;            // 名额：最多带几段资料进 prompt
+
+// 把一句话变成向量（坐标）——调 Google 的 Embedding 模型
+async function embed(text) {
+  const response = await fetch(EMBED_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': googleKey },
+    body: JSON.stringify({
+      model: 'models/gemini-embedding-001',
+      content: { parts: [{ text }] },
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Embedding 调用失败（HTTP ${response.status}）：${err.slice(0, 200)}`);
+  }
+  const data = await response.json();
+  return data.embedding.values;
+}
+
+// 余弦相似度：量两支「箭头」方向像不像（0=毫不相关，1=一模一样）
+function cosineSimilarity(a, b) {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+// 每个 Agent 一个专属档案柜：data/knowledge/{agentId}.json
+// 存的是 [{ text: 资料原文, vec: 向量 }] —— 向量提前算好（预计算）
+const KNOWLEDGE_DIR = path.join(DATA_DIR, 'knowledge');
+if (!fs.existsSync(KNOWLEDGE_DIR)) fs.mkdirSync(KNOWLEDGE_DIR);
+
+function knowledgeFile(agentId) {
+  return path.join(KNOWLEDGE_DIR, agentId + '.json');
+}
+function loadKnowledge(agentId) {
+  return readJSON(knowledgeFile(agentId), []);
+}
+function saveKnowledge(agentId, list) {
+  writeJSON(knowledgeFile(agentId), list);
+}
+
+// 检索：问题变向量 → 和每段资料算余弦 → 排序取前K名 → 过门槛
+async function retrieveKnowledge(agentId, query) {
+  const docs = loadKnowledge(agentId);
+  if (docs.length === 0) return [];   // 档案柜空的，直接走人
+  const qVec = await embed(query);
+  return docs
+    .map((doc) => ({ text: doc.text, sim: cosineSimilarity(qVec, doc.vec) }))
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, TOP_K)
+    .filter((doc) => doc.sim > SIM_THRESHOLD)
+    .map((doc) => doc.text);
+}
+
 // ---------- 中间件 ----------
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -193,7 +267,7 @@ app.delete('/api/agents/:id', (req, res) => {
  *   - 用户的最新消息命中某个技能的 trigger 关键词 -> 把该技能的完整 content 注入
  *   - 没命中的技能只注入「名称+描述」，让模型知道自己会什么
  */
-function buildMessages(agent, history, userMessage) {
+function buildMessages(agent, history, userMessage, knowledgeChunks) {
   const skillParts = [];
   for (const skill of agent.skills || []) {
     const triggers = (skill.trigger || '')
@@ -208,10 +282,18 @@ function buildMessages(agent, history, userMessage) {
     }
   }
 
+  // RAG 的「增强」环节：把检索到的资料垫在 prompt 里，让 AI 照着答，不许瞎编
+  const ragPart =
+    knowledgeChunks && knowledgeChunks.length
+      ? `【知识库资料】回答时优先依据以下资料，资料里没有的信息请诚实说不知道：\n` +
+        knowledgeChunks.map((t, i) => `资料${i + 1}：${t}`).join('\n')
+      : '';
+
   const systemContent = [
     agent.systemPrompt,
     agent.description ? `关于你的补充说明：${agent.description}` : '',
     skillParts.length ? `你可以使用的技能：\n${skillParts.join('\n')}` : '',
+    ragPart,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -242,7 +324,19 @@ async function askAgent(agent, message, history) {
     return mockReply(agent, message);
   }
 
-  const messages = buildMessages(agent, history || [], message);
+  // RAG 的「检索」环节：先去该 Agent 的知识库里捞相关资料
+  // 没配 Google Key 或档案柜为空时，chunks 是空数组，一切照旧
+  let chunks = [];
+  if (googleKey) {
+    try {
+      chunks = await retrieveKnowledge(agent.id, message);
+      if (chunks.length) console.log(`[RAG] 「${message}」命中 ${chunks.length} 段资料`);
+    } catch (err) {
+      console.error('[RAG] 检索出错（不影响回复）:', err.message);
+    }
+  }
+
+  const messages = buildMessages(agent, history || [], message, chunks);
 
   const response = await fetch(config.baseUrl, {
     method: 'POST',
@@ -296,6 +390,41 @@ app.post('/api/agents/:id/save-history', (req, res) => {
   res.json({ ok: true, total: list.length });  // 开回执：一共存了几条
 });
 
+
+// ============================================================
+//  知识库接口（RAG 的资料入口）
+// ============================================================
+// 查：列出该 Agent 知识库里的资料（只回原文，向量太大不回传）
+app.get('/api/agents/:id/knowledge', (req, res) => {
+  const docs = loadKnowledge(req.params.id);
+  res.json({ total: docs.length, items: docs.map((d) => d.text) });
+});
+
+// 增：用户交一段资料 → 调 Google 变向量 → 存进专属档案柜
+app.post('/api/agents/:id/knowledge', async (req, res) => {
+  const agent = loadAgents().find((a) => a.id === req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent 不存在' });
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: '资料内容不能为空' });
+  if (!googleKey) {
+    return res.status(400).json({ error: '尚未配置 Google API Key（Embedding 需要），见 README' });
+  }
+  try {
+    const vec = await embed(text.trim());
+    const docs = loadKnowledge(agent.id);
+    docs.push({ text: text.trim(), vec });
+    saveKnowledge(agent.id, docs);
+    res.json({ ok: true, total: docs.length, dims: vec.length });
+  } catch (err) {
+    res.status(502).json({ error: '向量化失败：' + err.message });
+  }
+});
+
+// 删：清空该 Agent 的整个知识库
+app.delete('/api/agents/:id/knowledge', (req, res) => {
+  saveKnowledge(req.params.id, []);
+  res.json({ ok: true });
+});
 
 app.get('/api/config', (req, res) => {
   // 不回传完整 Key，只回传是否有 Key + 脱敏预览

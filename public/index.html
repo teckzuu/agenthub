@@ -169,6 +169,7 @@
     <textarea data-page-node-id="rTW2Rz7efL7lWSE7ZYWsjh" id="chatInput" placeholder="输入消息，Enter 发送（Shift+Enter 换行）"></textarea>
     <button data-page-node-id="C00sqHtE5LWgXbINbav9cg" class="btn btn-primary btn-sm" onclick="send()" style="width:auto; padding:0 22px"><!--pnid:SE6uDcyd7PmT7Z4blfc1nN-->发送</button>
     <button class="btn btn-ghost btn-sm" onclick="saveChat()" style="width:auto">💾 save</button>
+    <button class="btn btn-ghost btn-sm" onclick="addKnowledge()" style="width:auto">📚 资料库</button>
 
   </div>
 </main>
@@ -334,6 +335,27 @@ async function saveChat() {
     body: JSON.stringify({ messages: history }),     // 货：整个聊天记录
   });
   toast(`✅ 已保存！服务器上共存了 ${data.total} 条记录`);
+}
+
+// 知识库：给当前 Agent 喂一段资料（RAG 的「喂书」入口）
+async function addKnowledge() {
+  if (!currentAgent) {
+    return toast('先选中一个 Agent 再喂资料');
+  }
+  const text = prompt(`给「${currentAgent.name}」添加知识（一段话，比如：本店拿铁12马币，学生证打九折）：`);
+  if (!text || !text.trim()) return;   // 点了取消就默默退出
+
+  toast('⏳ 正在把资料变成向量…');
+  try {
+    const data = await api(`/api/agents/${currentAgent.id}/knowledge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    toast(`✅ 已入库！${currentAgent.name} 现在有 ${data.total} 条知识（向量 ${data.dims} 维）`);
+  } catch (err) {
+    toast('❌ ' + err.message);
+  }
 }
 
 
