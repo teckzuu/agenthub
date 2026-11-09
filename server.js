@@ -71,7 +71,11 @@ const DEFAULT_CONFIG = {
 
 let config = { ...DEFAULT_CONFIG, ...readJSON(CONFIG_FILE, {}) };
 // 环境变量优先：部署到云端时用环境变量传 Key，不把 Key 提交进代码仓库
+// 网址和模型名也算「环境细节」：云端没有 config.json，全靠环境变量补齐，
+// 否则会退回默认的智谱网址，拿 OpenRouter 的钥匙敲智谱的门 → 401
 if (process.env.LLM_API_KEY) config.apiKey = process.env.LLM_API_KEY;
+if (process.env.LLM_BASE_URL) config.baseUrl = process.env.LLM_BASE_URL;
+if (process.env.LLM_MODEL) config.model = process.env.LLM_MODEL;
 
 // ============================================================
 //  RAG 知识库引擎（第 11-13 课学的内容，生产化落地）
