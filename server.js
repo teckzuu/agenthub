@@ -91,7 +91,7 @@ if (!googleKey) {
 }
 const EMBED_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent';
-const SIM_THRESHOLD = 0.66; // 门槛：第 13 课用真实数据校准出来的分界线
+const SIM_THRESHOLD = 0.6; // 门槛：切块后资料内容被稀释，分数整体下降，实测 0.6 正好卡在相关(0.63+)与无关(0.55-)之间
 const TOP_K = 2;            // 名额：最多带几段资料进 prompt
 
 // 把一句话变成向量（坐标）——调 Google 的 Embedding 模型
@@ -123,6 +123,40 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
 
+// ---------- 关键词检索路（第 11 课的碎片打分，混合检索的第 2 条腿） ----------
+// 把文字切成相邻两字的碎片 (Bigram)，数资料和问题重合了几个碎片
+function toBigrams(text) {
+  const clean = text.replace(/[\s，。？！?!,.：:；;]/g, '');
+  const pieces = [];
+  for (let i = 0; i < clean.length - 1; i++) pieces.push(clean.slice(i, i + 2));
+  return pieces;
+}
+function keywordScore(query, docText) {
+  const q = new Set(toBigrams(query));
+  let hits = 0;
+  for (const p of toBigrams(docText)) if (q.has(p)) hits++;
+  // 整词命中加分：查询里的长词（≥4个字）在资料里原样出现 → 冠军级信号
+  // 例如用户逐字打出密码「agenthub2026」，命中就是铁证，不该被语义路的平庸名次挤掉
+  const tokens = query.split(/[^\w\u4e00-\u9fa5]+/).filter((t) => t.length >= 4);
+  if (tokens.some((t) => docText.includes(t))) hits += 5;
+  return hits;
+}
+
+// ---------- RRF 融合器（第 16 课）：不看分数看名次 ----------
+// k=60：分数"平"，偏爱两路共识（两个裁判都点头的资料）
+function rrfMerge(listA, listB, k = 60) {
+  const scores = {};
+  listA.forEach((id, rank) => {
+    scores[id] = (scores[id] || 0) + 1 / (k + rank + 1);
+  });
+  listB.forEach((id, rank) => {
+    scores[id] = (scores[id] || 0) + 1 / (k + rank + 1);
+  });
+  return Object.entries(scores)
+    .map(([id, score]) => ({ id: Number(id), score }))
+    .sort((a, b) => b.score - a.score);
+}
+
 // 每个 Agent 一个专属档案柜：data/knowledge/{agentId}.json
 // 存的是 [{ text: 资料原文, vec: 向量 }] —— 向量提前算好（预计算）
 const KNOWLEDGE_DIR = path.join(DATA_DIR, 'knowledge');
@@ -138,17 +172,51 @@ function saveKnowledge(agentId, list) {
   writeJSON(knowledgeFile(agentId), list);
 }
 
-// 检索：问题变向量 → 和每段资料算余弦 → 排序取前K名 → 过门槛
-// 返回对象数组 {text, sim}：不只给文字，还带相似度分数（引用展示要用）
+// 检索升级：混合检索 (Hybrid Search)——两条腿走路 + RRF 合并
+// 向量路：懂意思，语义问题靠它；关键词路：逐字精确，密码/编号靠它
+// 两路各出一份排名，RRF 用名次换算 (1/(60+名次)) 公平合并
 async function retrieveKnowledge(agentId, query) {
   const docs = loadKnowledge(agentId);
   if (docs.length === 0) return [];   // 档案柜空的，直接走人
   const qVec = await embed(query);
-  return docs
-    .map((doc) => ({ text: doc.text, sim: cosineSimilarity(qVec, doc.vec) }))
-    .sort((a, b) => b.sim - a.sim)
+
+  // 每段资料同时拿到两个分：sim（余弦）+ kw（碎片命中数）
+  const scored = docs.map((doc, i) => ({
+    i,
+    text: doc.text,
+    sim: cosineSimilarity(qVec, doc.vec),
+    kw: keywordScore(query, doc.text),
+  }));
+  const bestSim = Math.max(...scored.map((d) => d.sim));
+  const hasKwHit = scored.some((d) => d.kw > 0);
+
+  // 全体都不相关（向量全低分 + 关键词零命中）→ 诚实说没有资料
+  // 「明天天气怎么样」这种问题就走这条路，不硬塞资料给模型
+  if (!hasKwHit && bestSim <= SIM_THRESHOLD) return [];
+
+  // 两路各自的排名（只交名次，不交原始分——单位不同没法直接加）
+  const vecRanked = [...scored].sort((a, b) => b.sim - a.sim).map((d) => d.i);
+  const kwRanked = scored
+    .filter((d) => d.kw > 0)
+    .sort((a, b) => b.kw - a.kw)
+    .map((d) => d.i);
+
+  // RRF 融合后按新名次排队
+  const fused = rrfMerge(vecRanked, kwRanked, 60);
+
+  // 入选资格线：向量过门槛 或 关键词命中过，二占其一
+  // 防止某段资料纯靠「向量路里排名靠前但分很低」混进 prompt
+  const pool = new Set(
+    scored.filter((d) => d.sim > SIM_THRESHOLD || d.kw > 0).map((d) => d.i)
+  );
+
+  return fused
+    .filter((f) => pool.has(f.id))
     .slice(0, TOP_K)
-    .filter((doc) => doc.sim > SIM_THRESHOLD);
+    .map((f) => {
+      const d = scored[f.id];
+      return { text: d.text, sim: d.sim, rrf: f.score };
+    });
 }
 
 // 切块 (Chunking)：长文档切成小段再分别向量化（第 14 课）
@@ -357,7 +425,10 @@ async function askAgent(agent, message, history) {
   if (googleKey) {
     try {
       chunks = await retrieveKnowledge(agent.id, message);
-      if (chunks.length) console.log(`[RAG] 「${message}」命中 ${chunks.length} 段资料`);
+      if (chunks.length) {
+        const detail = chunks.map((c) => `RRF=${c.rrf.toFixed(4)}`).join(', ');
+        console.log(`[RAG] 「${message}」混合检索命中 ${chunks.length} 段（${detail}）`);
+      }
     } catch (err) {
       console.error('[RAG] 检索出错（不影响回复）:', err.message);
     }
